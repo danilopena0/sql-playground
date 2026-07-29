@@ -158,9 +158,10 @@ def generate_members(n=150) -> pd.DataFrame:
 def generate_claims(members_df, providers_df, physicians_df, diagnoses_df, procedures_df, n=1000) -> pd.DataFrame:
     rows = []
     start, end = date(2023, 1, 1), date(2024, 6, 30)
+    physician_records = physicians_df.to_dict("records")
     for i in range(1, n + 1):
         member_id = int(random.choice(members_df["member_id"]))
-        physician = physicians_df.sample(1).iloc[0]
+        physician = random.choice(physician_records)
         physician_id = int(physician["physician_id"])
         provider_id = int(physician["provider_id"])
         diagnosis_code = random.choice(diagnoses_df["diagnosis_code"].tolist())
@@ -169,7 +170,17 @@ def generate_claims(members_df, providers_df, physicians_df, diagnoses_df, proce
         service_date = _random_date(start, end)
         submitted_date = service_date + timedelta(days=random.randint(0, 21))
 
-        claim_amount = round(random.uniform(80, 25000), 2)
+        # Right-skewed like real claim amounts (lots of small/medium claims,
+        # a long tail of expensive ones), with a small fraction of claims
+        # deliberately seeded as extreme outliers relative to their own
+        # provider's typical amount -- gives the fraud-detection queries in
+        # the notebook genuine signal to find, the way real claims data
+        # (mostly normal, a few truly anomalous) does.
+        base_amount = random.lognormvariate(7.0, 0.8)
+        if random.random() < 0.015:
+            base_amount *= random.uniform(4, 7)
+        claim_amount = round(min(max(base_amount, 60), 60000), 2)
+
         status = random.choices(CLAIM_STATUSES, weights=[0.65, 0.12, 0.10, 0.13])[0]
 
         if status == "Denied":
